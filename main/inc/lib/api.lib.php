@@ -5095,7 +5095,7 @@ function api_get_language_id($language)
         return null;
     }
 
-    static $staticResult;
+    static $staticResult = [];
 
     if (isset($staticResult[$language])) {
         return $staticResult[$language];
@@ -10157,4 +10157,13 @@ function api_get_print_css(bool $getFileContents = true, bool $useWebPath = fals
     }
 
     return $cssFile;
+}
+
+function api_protect_webservices()
+{
+    if (api_get_configuration_value('disable_webservices')) {
+        echo "Webservices are disabled. \n";
+        echo "To enable, add \$_configuration['disable_webservices'] = true; in configuration.php";
+        exit;
+    }
 }
