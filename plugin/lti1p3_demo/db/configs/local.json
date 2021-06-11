@@ -1,0 +1,13 @@
+{
+    "http://my.chamilo111.com": {
+        "client_id": "uKvUVJgOcLMHGq2ZcJd2",
+        "auth_login_url": "http://my.chamilo111.com/plugin/ims_lti/auth.php",
+        "auth_token_url": "http://my.chamilo111.com/plugin/ims_lti/token.php",
+        "key_set_url": "http://my.chamilo111.com/plugin/ims_lti/jwks.php",
+        "private_key_file": "/keys/private.key",
+        "kid": "8a8e8c0adc312a059a02",
+        "deployment": [
+            "11"
+        ]
+    }
+}

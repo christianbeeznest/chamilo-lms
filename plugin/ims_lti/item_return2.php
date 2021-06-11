@@ -31,7 +31,7 @@ try {
         throw new Exception('Data claim is missing');
     }
 
-    if ($payload['aud'] !== ImsLtiPlugin::getIssuerUrl()) {
+    if ($payload['aud'][0] !== ImsLtiPlugin::getIssuerUrl()) {
         throw new Exception('Audience not valid');
     }
 

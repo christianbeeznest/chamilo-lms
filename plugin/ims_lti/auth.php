@@ -81,7 +81,7 @@ try {
     if (ImsLtiPlugin::getLaunchUserIdClaim($tool, $user) != $loginHint) {
         throw LtiAuthException::accessDenied();
     }
-
+    
     if ($redirectUri !== $tool->getRedirectUrl()) {
         throw LtiAuthException::unregisteredRedirectUri();
     }
@@ -210,6 +210,7 @@ try {
                     'scope' => [
                         LtiAssignmentGradesService::SCOPE_LINE_ITEM,
                         LtiAssignmentGradesService::SCOPE_LINE_ITEM_READ,
+                        LtiAssignmentGradesService::SCOPE_SCORE_WRITE
                     ],
                     'lineitems' => LtiAssignmentGradesService::getLineItemsUrl(
                         $course->getId(),
