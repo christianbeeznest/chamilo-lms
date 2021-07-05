@@ -197,7 +197,7 @@ class CourseSelectForm
         echo Display::return_message(get_lang('DontForgetToSelectTheMediaFilesIfYourResourceNeedIt'));
 
         $resource_titles = self::getResourceTitleList();
-        $element_count = self::parseResources($resource_titles, $course->resources, true, true);
+        $element_count = self::parseResources($resource_titles, $course->resources, true, true, $forum_categories, $forums, $forum_topics);
 
         // Fixes forum order
         if (!empty($forum_categories)) {
@@ -330,7 +330,10 @@ class CourseSelectForm
         $resource_titles,
         $resourceList,
         $showHeader = true,
-        $showItems = true
+        $showItems = true,
+        &$forum_categories = array(),
+        &$forums = array(),
+        &$forum_topics = array()   
     ) {
         $element_count = 0;
         foreach ($resourceList as $type => $resources) {
