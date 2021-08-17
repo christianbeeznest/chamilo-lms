@@ -154,7 +154,7 @@ switch ($action) {
                     '',
                     '', // comment
                     0,
-                    '',
+                    'rename',
                     false,
                     false,
                     'files'
@@ -170,9 +170,16 @@ switch ($action) {
                 $userId = api_get_user_id();
                 $syspath = UserManager::getUserPathById($userId, 'system').'my_files'.$currentDirectory;
                 $webpath = UserManager::getUserPathById($userId, 'web').'my_files'.$currentDirectory;
-                if (move_uploaded_file($fileUpload['tmp_name'], $syspath.$fileUpload['name'])) {
-                    $url = $webpath.$fileUpload['name'];
-                    $data = ['uploaded' => 1, 'fileName' => $fileUpload['name'], 'url' => $url];
+                $fileUploadName = $fileUpload['name'];
+                if (file_exists($syspath.$fileUploadName)) {
+                    $extension = pathinfo($fileUploadName, PATHINFO_EXTENSION);
+                    $fileName = pathinfo($fileUploadName, PATHINFO_FILENAME);
+                    $suffix = '_'.uniqid();
+                    $fileUploadName = $fileName.$suffix.'.'.$extension;
+                }
+                if (move_uploaded_file($fileUpload['tmp_name'], $syspath.$fileUploadName)) {
+                    $url = $webpath.$fileUploadName;
+                    $data = ['uploaded' => 1, 'fileName' => $fileUploadName, 'url' => $url];
                 }
             }
             echo json_encode($data);
