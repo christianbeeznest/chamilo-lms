@@ -119,6 +119,10 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
         $onlyTeachers = true;
     }
 
+    if (isset($_SESSION['form_values'])) {
+        $default = $_SESSION['form_values'];
+    }
+
     $form = new FormValidator(
         'compose_message',
         null,
@@ -301,6 +305,10 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
         }
 
         if ($check) {
+            if (isset($_SESSION['form_values'])) {
+                unset($_SESSION['form_values']);
+            }
+
             $user_list = $default['users'];
             $file_comments = $_POST['legend'];
             $title = $default['title'];
@@ -350,6 +358,7 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
                             false
                         ));
                     } else {
+                        $_SESSION['form_values'] = $default;
                         header('Location: '.api_request_uri());
                         exit;
                     }

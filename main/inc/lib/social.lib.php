@@ -2727,6 +2727,10 @@ class SocialManager extends UserManager
                     $field_variable
                 );
 
+                if (false === $extraFieldInfo) {
+                    continue;
+                }
+
                 if (in_array($extraFieldInfo['variable'], ['skype', 'linkedin_url'])) {
                     continue;
                 }

@@ -3322,8 +3322,11 @@ function show_add_post_form($current_forum, $action, $form_values = [], $showPre
             null,
             ['id' => 'reply-add-attachment']
         );
+        $form->addRule('user_upload[]', $errMessage, 'maxfilesize', getIniMaxFileSizeInBytes());
     } else {
         $form->addFile('user_upload', get_lang('Attachment').' ('.get_lang('MaxFileSize').' : '.getIniMaxFileSizeInBytes(true).')');
+        $errMessage = get_lang('FileSizeIsTooBig').' '.get_lang('MaxFileSize').' : '.getIniMaxFileSizeInBytes(true);
+        $form->addRule('user_upload', $errMessage, 'maxfilesize', getIniMaxFileSizeInBytes());
     }
 
     if ($giveRevision) {
@@ -3867,12 +3870,24 @@ function store_reply($current_forum, $values, $courseId = 0, $userId = 0)
 
     $errMessage = get_lang('UplNoFileUploaded').' '.get_lang('UplSelectFileFirst');
     $maxFileSize = getIniMaxFileSizeInBytes();
+
     if (!empty($_FILES['user_upload']['name'])) {
-        if ($maxFileSize > 0 && $_FILES['user_upload']['size'] <= $maxFileSize) {
-            $upload_ok = process_uploaded_file($_FILES['user_upload']);
+        if (is_array($_FILES['user_upload']['name'])) {
+            $totalFileSize = 0;
+            for ($i = 0; $i < count($_FILES['user_upload']['name']); $i++) {
+                $totalFileSize += $_FILES['user_upload']['size'][$i];
+            }
+            if ($totalFileSize > $maxFileSize) {
+                $upload_ok = 0;
+                $errMessage = get_lang('FileSizeIsTooBig').' '.get_lang('MaxFileSize').' : '.getIniMaxFileSizeInBytes(true);
+            }
         } else {
-            $upload_ok = 0;
-            $errMessage = get_lang('FileSizeIsTooBig').' '.get_lang('MaxFileSize').' : '.getIniMaxFileSizeInBytes(true);
+            if ($maxFileSize > 0 && $_FILES['user_upload']['size'] <= $maxFileSize) {
+                $upload_ok = process_uploaded_file($_FILES['user_upload']);
+            } else {
+                $upload_ok = 0;
+                $errMessage = get_lang('FileSizeIsTooBig').' '.get_lang('MaxFileSize').' : '.getIniMaxFileSizeInBytes(true);
+            }
         }
     }
 
