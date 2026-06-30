@@ -506,7 +506,7 @@ final class SystemUpdateController extends AbstractController
         }
 
         if (!$this->updateConfiguration->allowsLocalPaths()) {
-            throw new InvalidArgumentException('Local update manifest paths are disabled in this environment. Configure CHAMILO_UPDATE_MANIFEST_URL or provide an HTTPS manifest URL.');
+            throw new InvalidArgumentException('Local update manifest paths are disabled. Use an HTTPS manifest URL or enable development update tools in UpdateConfiguration for local tests.');
         }
 
         if ($this->isAbsolutePath($source)) {

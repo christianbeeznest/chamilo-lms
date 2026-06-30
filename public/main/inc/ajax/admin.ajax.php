@@ -5,6 +5,7 @@
 use Chamilo\CoreBundle\Entity\BranchSync;
 use Chamilo\CoreBundle\Framework\Container;
 use Chamilo\CoreBundle\Repository\BranchSyncRepository;
+use Chamilo\CoreBundle\Service\Update\UpdateConfiguration;
 use GuzzleHttp\Client;
 use League\Flysystem\Filesystem;
 
@@ -336,9 +337,7 @@ function getLatestNews(): string
  */
 function appendLocalSystemUpdateNotice(string $html): string
 {
-    $environment = (string) api_get_env_variable('APP_ENV', 'prod');
-
-    if (!in_array($environment, ['dev', 'test'], true)) {
+    if (!UpdateConfiguration::ENABLE_DEVELOPMENT_UPDATE_TOOLS) {
         return $html;
     }
 

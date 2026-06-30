@@ -71,7 +71,10 @@
           </dd>
         </div>
 
-        <div class="rounded-2xl border border-gray-20 bg-support-2 p-4">
+        <div
+          v-if="showDevelopmentUpdateTools"
+          class="rounded-2xl border border-gray-20 bg-support-2 p-4"
+        >
           <dt class="flex items-center gap-2 text-caption font-semibold uppercase tracking-wide text-gray-50">
             <i class="mdi mdi-test-tube text-primary" />
             {{ t("Local test options") }}
@@ -984,7 +987,7 @@
           class="mt-4 rounded-2xl border border-warning bg-support-2 p-3 text-caption font-semibold text-gray-90"
         >
           <span class="mdi mdi-alert-outline mr-1" />
-          {{ t("Running post-apply actions from the UI is disabled in production mode.") }}
+          {{ t("Running post-apply actions from the UI is disabled on this server.") }}
         </div>
 
         <div
@@ -1333,6 +1336,15 @@ const localTestUpdateEntryPath = computed(() => {
   return "/admin/system-update?source=local-test&check=1"
 })
 
+const showDevelopmentUpdateTools = computed(() => {
+  return Boolean(
+    status.allowLocalPaths ||
+      status.allowSkipSignature ||
+      status.localTestManifestSource ||
+      status.localTestPackagePath,
+  )
+})
+
 const showTrustedPublicKeyInput = computed(() => {
   return status.allowLocalPaths && !status.trustedPublicKeyConfigured
 })
@@ -1358,7 +1370,7 @@ const manifestSourceHelp = computed(() => {
     return t("No official manifest URL is configured yet. Use an HTTPS URL or a local path for development tests.")
   }
 
-  return t("Configure CHAMILO_UPDATE_MANIFEST_URL on the server or provide an HTTPS manifest URL.")
+  return t("Use the official manifest URL or provide another HTTPS manifest URL.")
 })
 
 const manifestRows = computed(() => {
