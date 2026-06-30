@@ -14,6 +14,7 @@ use Chamilo\CourseBundle\Entity\CGroup;
 use Chamilo\CourseBundle\Entity\CGroupRelUser;
 use Chamilo\CourseBundle\Entity\CLp;
 use Chamilo\CourseBundle\Entity\CLpRelUser;
+use DateTime;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Doctrine\DBAL\Types\Types;
@@ -40,8 +41,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -79,8 +82,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -88,7 +93,7 @@ final class LpAdvancedAccessController extends AbstractController
 
         $payload = $this->decodePayload($request);
         $userId = (int) ($payload['userId'] ?? 0);
-        if (0 >= $userId) {
+        if ($userId <= 0) {
             return $this->json(['error' => 'Invalid user.'], 400);
         }
 
@@ -110,7 +115,7 @@ final class LpAdvancedAccessController extends AbstractController
                 ->setLp($lp)
                 ->setUser($user)
                 ->setCreatorUser($this->getManagedCurrentUser($entityManager))
-                ->setCreatedAt(new \DateTime())
+                ->setCreatedAt(new DateTime())
             ;
 
             if ($session instanceof Session) {
@@ -140,8 +145,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -151,11 +158,6 @@ final class LpAdvancedAccessController extends AbstractController
         $user = $entityManager->getRepository(User::class)->find($userId);
         if (!$user instanceof User) {
             return $this->json(['error' => 'User not found.'], 404);
-        }
-
-        $dateError = $this->validateDateRange($payload);
-        if (null !== $dateError) {
-            return $this->json(['error' => $dateError], 400);
         }
 
         $entry = $this->findRestriction($entityManager, $course, $lp, $session, $user, null);
@@ -180,8 +182,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -189,7 +193,7 @@ final class LpAdvancedAccessController extends AbstractController
 
         $payload = $this->decodePayload($request);
         $groupId = (int) ($payload['groupId'] ?? 0);
-        if (0 >= $groupId) {
+        if ($groupId <= 0) {
             return $this->json(['error' => 'Invalid group.'], 400);
         }
 
@@ -218,7 +222,7 @@ final class LpAdvancedAccessController extends AbstractController
                     ->setUser($user)
                     ->setGroup($group)
                     ->setCreatorUser($this->getManagedCurrentUser($entityManager))
-                    ->setCreatedAt(new \DateTime())
+                    ->setCreatedAt(new DateTime())
                 ;
 
                 if ($session instanceof Session) {
@@ -250,8 +254,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -298,8 +304,10 @@ final class LpAdvancedAccessController extends AbstractController
 
         /** @var Course $course */
         $course = $context['course'];
+
         /** @var CLp $lp */
         $lp = $context['lp'];
+
         /** @var Session|null $session */
         $session = $context['session'];
 
@@ -341,7 +349,7 @@ final class LpAdvancedAccessController extends AbstractController
         $courseId = (int) $request->query->get('cid', $request->request->get('cid', 0));
         $sessionId = (int) $request->query->get('sid', $request->request->get('sid', 0));
 
-        if (0 >= $courseId) {
+        if ($courseId <= 0) {
             return [
                 'valid' => false,
                 'status' => 400,
@@ -378,7 +386,7 @@ final class LpAdvancedAccessController extends AbstractController
         }
 
         $session = null;
-        if (0 < $sessionId) {
+        if ($sessionId > 0) {
             /** @var Session|null $session */
             $session = $entityManager->getRepository(Session::class)->find($sessionId);
         }
@@ -403,11 +411,11 @@ final class LpAdvancedAccessController extends AbstractController
             ->join('rn.resourceLinks', 'rl')
             ->where('lp = :lp')
             ->andWhere('rl.course = :course')
-            ->setParameter('lp', $lp)
-            ->setParameter('course', $course)
+            ->setParameter('lp', (int) $lp->getIid())
+            ->setParameter('course', (int) $course->getId())
         ;
 
-        if (0 < $sessionId) {
+        if ($sessionId > 0) {
             $qb->andWhere('(rl.session = :session OR rl.session IS NULL)')
                 ->setParameter('session', $entityManager->getReference(Session::class, $sessionId))
             ;
@@ -415,7 +423,7 @@ final class LpAdvancedAccessController extends AbstractController
             $qb->andWhere('rl.session IS NULL');
         }
 
-        return 0 < (int) $qb->getQuery()->getSingleScalarResult();
+        return (int) $qb->getQuery()->getSingleScalarResult() > 0;
     }
 
     /**
@@ -437,7 +445,7 @@ final class LpAdvancedAccessController extends AbstractController
             ->andWhere('cru.status = :student')
             ->orderBy('u.lastname', 'ASC')
             ->addOrderBy('u.firstname', 'ASC')
-            ->setParameter('course', $course)
+            ->setParameter('course', (int) $course->getId())
             ->setParameter('student', CourseRelUser::STUDENT, Types::INTEGER)
         ;
 
@@ -496,7 +504,7 @@ final class LpAdvancedAccessController extends AbstractController
             ->join('gru.group', 'g')
             ->where('gru.cId = :courseId')
             ->orderBy('g.title', 'ASC')
-            ->setParameter('courseId', (int) $course->getId(), Types::INTEGER)
+            ->setParameter('courseId', (int) $course->getId())
         ;
 
         /** @var list<CGroupRelUser> $groupRelations */
@@ -520,7 +528,7 @@ final class LpAdvancedAccessController extends AbstractController
             $rows[] = [
                 'id' => $groupId,
                 'title' => $group->getTitle(),
-                'membersCount' => count($members),
+                'membersCount' => \count($members),
                 'restriction' => $restrictionsByGroup[$groupId] ?? null,
             ];
         }
@@ -547,12 +555,12 @@ final class LpAdvancedAccessController extends AbstractController
             ->leftJoin('rel.group', 'g')
             ->where('rel.course = :course')
             ->andWhere('rel.lp = :lp')
-            ->setParameter('course', $course)
-            ->setParameter('lp', $lp)
+            ->setParameter('course', (int) $course->getId())
+            ->setParameter('lp', (int) $lp->getIid())
         ;
 
         if ($session instanceof Session) {
-            $qb->andWhere('rel.session = :session')->setParameter('session', $session);
+            $qb->andWhere('rel.session = :session')->setParameter('session', (int) $session->getId());
         } else {
             $qb->andWhere('rel.session IS NULL');
         }
@@ -589,12 +597,12 @@ final class LpAdvancedAccessController extends AbstractController
             ->where('rel.course = :course')
             ->andWhere('rel.lp = :lp')
             ->andWhere('rel.group IS NOT NULL')
-            ->setParameter('course', $course)
-            ->setParameter('lp', $lp)
+            ->setParameter('course', (int) $course->getId())
+            ->setParameter('lp', (int) $lp->getIid())
         ;
 
         if ($session instanceof Session) {
-            $qb->andWhere('rel.session = :session')->setParameter('session', $session);
+            $qb->andWhere('rel.session = :session')->setParameter('session', (int) $session->getId());
         } else {
             $qb->andWhere('rel.session IS NULL');
         }
@@ -627,7 +635,7 @@ final class LpAdvancedAccessController extends AbstractController
             ->join('gru.group', 'g')
             ->where('gru.cId = :courseId')
             ->orderBy('g.title', 'ASC')
-            ->setParameter('courseId', (int) $course->getId(), Types::INTEGER)
+            ->setParameter('courseId', (int) $course->getId())
         ;
 
         /** @var list<CGroupRelUser> $rows */
@@ -660,8 +668,8 @@ final class LpAdvancedAccessController extends AbstractController
             ->join('gru.user', 'u')
             ->where('gru.cId = :courseId')
             ->andWhere('gru.group = :group')
-            ->setParameter('courseId', (int) $course->getId(), Types::INTEGER)
-            ->setParameter('group', $group)
+            ->setParameter('courseId', (int) $course->getId())
+            ->setParameter('group', (int) $group->getIid())
         ;
 
         /** @var list<CGroupRelUser> $rows */
@@ -700,9 +708,7 @@ final class LpAdvancedAccessController extends AbstractController
         }
 
         /** @var CLpRelUser|null $entry */
-        $entry = $entityManager->getRepository(CLpRelUser::class)->findOneBy($criteria);
-
-        return $entry;
+        return $entityManager->getRepository(CLpRelUser::class)->findOneBy($criteria);
     }
 
     /**
@@ -731,9 +737,7 @@ final class LpAdvancedAccessController extends AbstractController
         }
 
         /** @var User|null $managedUser */
-        $managedUser = $entityManager->getRepository(User::class)->find((int) $currentUser->getId());
-
-        return $managedUser;
+        return $entityManager->getRepository(User::class)->find((int) $currentUser->getId());
     }
 
     private function validateDateRange(array $payload): ?string

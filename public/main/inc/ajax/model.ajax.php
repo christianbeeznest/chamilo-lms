@@ -148,7 +148,15 @@ if ($isDiagnosisLoadSearch) {
         api_not_allowed(true);
     }
 } elseif (in_array($action, $adminActions, true)) {
-    api_protect_admin_script(true);
+    // Admin actions whose result sets are already scoped to the entities the HR manager
+    // (DRH) actually follows. Only these may be opened to DRH; the rest (e.g. get_sessions,
+    // which lists every session on the platform) stay admin / session-admin only.
+    $drhScopedActions = [
+        'get_sessions_tracking',
+        'get_user_course_report',
+        'get_user_course_report_resumed',
+    ];
+    api_protect_admin_script(true, in_array($action, $drhScopedActions, true));
 } else {
     api_protect_admin_script(true);
 }
@@ -786,7 +794,7 @@ switch ($action) {
             exit;
         }
 
-        $courseId = $_REQUEST['course_id'] ?? 0;
+        $courseId = (int) ($_REQUEST['course_id'] ?? 0);
         $exerciseId = $_REQUEST['exercise_id'] ?? 0;
         $status = $_REQUEST['status'] ?? 0;
         if (isset($_GET['filter_by_user']) && !empty($_GET['filter_by_user'])) {
@@ -830,7 +838,7 @@ switch ($action) {
     case 'get_exercise_results':
         $exercise_id = $_REQUEST['exerciseId'];
 
-        $courseId = $_REQUEST['course_id'] ?? 0;
+        $courseId = (int) ($_REQUEST['course_id'] ?? 0);
         $exerciseId = $_REQUEST['exercise_id'] ?? 0;
         $status = $_REQUEST['status'] ?? 0;
         if (isset($_GET['filter_by_user']) && !empty($_GET['filter_by_user'])) {

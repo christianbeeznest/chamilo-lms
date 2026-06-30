@@ -31,7 +31,6 @@ use const JSON_THROW_ON_ERROR;
 use const JSON_UNESCAPED_SLASHES;
 use const JSON_UNESCAPED_UNICODE;
 use const PATHINFO_EXTENSION;
-use function http_build_query;
 
 final class AiCourseAnalyzerService
 {
@@ -213,7 +212,7 @@ final class AiCourseAnalyzerService
             ->innerJoin('resourceNode.resourceLinks', 'resourceLink')
             ->andWhere('resourceLink.course = :course')
             ->andWhere('resourceLink.visibility = :visibility')
-            ->setParameter('course', $course)
+            ->setParameter('course', (int) $course->getId())
             ->setParameter('visibility', ResourceLink::VISIBILITY_PUBLISHED, Types::INTEGER)
             ->setMaxResults(self::MAX_LESSONS)
             ->orderBy('resourceLink.displayOrder', 'ASC')
@@ -222,7 +221,7 @@ final class AiCourseAnalyzerService
         if ($session instanceof Session) {
             $qb
                 ->andWhere('(resourceLink.session IS NULL OR resourceLink.session = :session)')
-                ->setParameter('session', $session)
+                ->setParameter('session', (int) $session->getId())
             ;
         } else {
             $qb->andWhere('resourceLink.session IS NULL');
@@ -536,7 +535,6 @@ final class AiCourseAnalyzerService
         ]);
     }
 
-
     /**
      * @param array<int, int> $excludedDocumentIds
      *
@@ -558,7 +556,7 @@ final class AiCourseAnalyzerService
             ->andWhere('resourceLink.course = :course')
             ->andWhere('resourceLink.visibility = :visibility')
             ->andWhere('document.filetype = :filetype')
-            ->setParameter('course', $course)
+            ->setParameter('course', (int) $course->getId())
             ->setParameter('visibility', ResourceLink::VISIBILITY_PUBLISHED, Types::INTEGER)
             ->setParameter('filetype', 'file', Types::STRING)
             ->setMaxResults(self::MAX_STANDALONE_DOCUMENTS)
@@ -575,7 +573,7 @@ final class AiCourseAnalyzerService
         if ($session instanceof Session) {
             $qb
                 ->andWhere('(resourceLink.session IS NULL OR resourceLink.session = :session)')
-                ->setParameter('session', $session)
+                ->setParameter('session', (int) $session->getId())
             ;
         } else {
             $qb->andWhere('resourceLink.session IS NULL');
@@ -610,7 +608,7 @@ final class AiCourseAnalyzerService
             ->leftJoin('question.answers', 'answer')
             ->andWhere('resourceLink.course = :course')
             ->andWhere('resourceLink.visibility = :visibility')
-            ->setParameter('course', $course)
+            ->setParameter('course', (int) $course->getId())
             ->setParameter('visibility', ResourceLink::VISIBILITY_PUBLISHED, Types::INTEGER)
             ->setMaxResults(self::MAX_STANDALONE_EXERCISES)
             ->orderBy('resourceLink.displayOrder', 'ASC')
@@ -626,7 +624,7 @@ final class AiCourseAnalyzerService
         if ($session instanceof Session) {
             $qb
                 ->andWhere('(resourceLink.session IS NULL OR resourceLink.session = :session)')
-                ->setParameter('session', $session)
+                ->setParameter('session', (int) $session->getId())
             ;
         } else {
             $qb->andWhere('resourceLink.session IS NULL');
@@ -651,8 +649,7 @@ final class AiCourseAnalyzerService
         int &$totalCharacters,
         ?Course $course = null,
         ?Session $session = null,
-    ): array
-    {
+    ): array {
         $resourceNode = $document->getResourceNode();
 
         $metadata = [
@@ -862,7 +859,6 @@ final class AiCourseAnalyzerService
         return mb_substr($text, 0, $maxCharacters).'…';
     }
 
-
     /**
      * @param array<string, mixed> $payload
      * @param array<string, mixed> $structured
@@ -1048,7 +1044,7 @@ final class AiCourseAnalyzerService
     }
 
     /**
-     * @param array<int, mixed> $structuredItems
+     * @param array<int, mixed>    $structuredItems
      * @param array<string, mixed> $payloadItem
      *
      * @return array<string, mixed>
@@ -1146,9 +1142,8 @@ final class AiCourseAnalyzerService
         }
 
         $value = mb_strtolower(trim($value));
-        $value = preg_replace('/\s+/', ' ', $value) ?? $value;
 
-        return $value;
+        return preg_replace('/\s+/', ' ', $value) ?? $value;
     }
 
     /**

@@ -65,6 +65,19 @@ If you genuinely think a convention is harmful, surface it. Don't fork silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
 
+### Rule 13 - OWASP security review
+
+Review **every** new and modified file (controller, Vue component, updated legacy links) for common vulnerabilities. This step must be re-run after any subsequent change request (e.g., adding features, fixing bugs, updating links) — not only on the initial pass.
+
+### Checklist
+
+- **CSRF on state-changing endpoints.** Any POST/PUT/DELETE controller that performs destructive or sensitive actions (delete, copy, anonymize, restore, status toggle, etc.) must validate a CSRF token. Use `$this->isCsrfTokenValid('intent_name', $token)` in the controller. Generate the token via `CsrfTokenManagerInterface::getToken('intent_name')`, return it in the data endpoint JSON, and include it as a hidden `_token` field in the Vue form submission.
+- **Broken access control.** Verify that `#[IsGranted(...)]` on the controller matches the legacy page's access checks. If the legacy page allowed both admins and session admins, use the `Expression` form. Verify that **every** destructive action inside the controller re-checks the role (e.g., session admins should not be able to delete sessions they don't manage just because they can reach the endpoint). For non-admin roles, filter actionable entity IDs to only those the current user is authorized to manage.
+- **SQL injection.** Never interpolate user input into DQL/SQL strings. Always use bound parameters (`:paramName` + `setParameter()`). The QueryBuilder already does this — verify no raw concatenation slipped in. Sort field values must use an allowlist mapping, never be passed directly into `orderBy()`.
+- **XSS.** Vue's template syntax (`{{ }}`) auto-escapes by default. Verify no `v-html` is used with user-supplied data. If linking to legacy PHP pages with query params built from data, ensure values are not attacker-controlled HTML. Check that dynamic `:href` bindings only interpolate integer IDs or known-safe strings.
+- **Open redirects.** If a controller builds a redirect URL using user-supplied or database values (e.g., a username), always `urlencode()` those values before embedding them in the URL. Verify that the Vue component does not use `window.location.href` with unsanitized query param values.
+- **Mass parameter manipulation.** Verify that array parameters from the client (e.g., `sessionIds[]`) are cast to safe types (`array_map('intval', ...)`) before use. Verify that a non-admin user cannot supply IDs of entities they do not own/manage.
+
 ## Project Overview
 
 Chamilo LMS 2.0 — an open-source e-learning platform built on **Symfony 6.4** (PHP 8.2/8.3) with a **Vue 3** frontend. Uses **API Platform 3.0** for REST/GraphQL APIs, **Doctrine ORM** for persistence, and **Webpack Encore** for asset compilation.
@@ -204,7 +217,7 @@ CSS uses **Tailwind CSS 3.4** with SCSS. Legacy pages also use Bootstrap 5 and j
 - Import classes via `use` statements — no inline `\Fully\Qualified\Name` in code.
 - Ordered class elements: constants → properties → constructor → public → protected → private.
 - Modern type casting: `(int)` not `intval()`.
-- `setParameter()` in QueryBuilder **must** include an explicit type (3rd arg) for non-scalars: `Types::INTEGER` for entity IDs, `Types::DATETIME_MUTABLE` for DateTime, `ArrayParameterType::INTEGER` for int arrays.
+- `setParameter()` in QueryBuilder infers the binding type automatically for integers, string/int arrays, `DateTime` instances and managed entities, so passing those directly is **functionally** correct. However, inferring the type of an **entity object** forces Doctrine to resolve its metadata to extract the identifier — Psalm's `QueryBuilderSetParameter` flags this as a performance cost. So: **prefer passing the scalar identifier** of an entity, e.g. `->setParameter('course', (int) $course->getId())` (Core entities) or `(int) $entity->getIid()` (CourseBundle entities). Once the value is a cast scalar, **omit** the 3rd-arg type — inference is trivial and `Types::INTEGER` is redundant. Reserve the explicit 3rd arg (`Types::*` / `ParameterType::*`) for when you need a binding type different from the inferred one (e.g. forcing `Types::STRING` on a numeric string) or for genuinely non-scalar values. Note: some existing code still passes `..., Types::INTEGER` after a cast — harmless legacy redundancy, not a pattern to copy.
 - All methods must have return types; all parameters must have type hints.
 
 ### JavaScript / Vue
@@ -388,6 +401,14 @@ These roles **only exist for the current request**. They are computed and publis
 
 The relationship logic lives in `CourseAccessResolver` (`src/CoreBundle/Security/CourseAccessResolver.php`), a pure service consumed by the listener. **Voters must never call `$user->addRole(ROLE_CURRENT_COURSE_*)`** — that pattern was removed in #8486 because Voter side-effects break Symfony's contract (non-deterministic order, short-circuit evaluation, etc.).
 
+#### When the contextual-role model applies (scope)
+
+The contextual-role model governs API operations that act **inside a course tool** — the request carries `cid`/`sid`/`gid` and the resource is course-scoped content. It is **not** a blanket rule for every entity:
+
+- **`CourseBundle` `#[ApiResource]` entities** — applies to **all except `CCalendarEvent`**, which is authorized by its dedicated `CCalendarEventVoter` (creator / collective-subscription ownership, not course context).
+- **`CoreBundle` `#[ApiResource]` entities** — **review case by case.** Many are not course-scoped (users, messages, social posts, user relations, sessions) and are governed by their own dedicated voters; only apply the contextual-role patterns to entities that genuinely operate inside a course tool.
+- Any resource with a **dedicated voter** (e.g. `CCalendarEventVoter`, `UsergroupVoter`, `SessionVoter`) keeps that voter as the authority — do not bolt contextual-role expressions on top of it.
+
 #### Role hierarchy
 
 `config/packages/security.yaml` declares one-way implications **within each axis**:
@@ -425,5 +446,48 @@ security: "is_granted('ROLE_CURRENT_COURSE_TEACHER')
 #### Caveats
 
 - **Body-only `cid` doesn't work.** `CidReqListener` reads `Request::get('cid')`, which sees query params and route attributes but not request bodies. Endpoints that pass `cid` only inside the JSON body need either an extra `cid` query param (preferred) or post-security validation in a `StateProcessor`.
+- **`Post` (create) can't use object-level checks.** On create the `resourceNode` does not exist yet, so `is_granted('CREATE', object)` / `object.resourceNode` fails closed. Gate creation with the contextual teacher roles through an operation-own `security:` (not `securityPostDenormalize`), which also avoids inheriting a resource-level `security:` that may omit `SESSION_TEACHER` and would otherwise block session teachers. `CToolIntro` is the reference.
 - **Output format negotiation runs before security.** Endpoints with binary `outputFormats` (`zip`, `bin`) reject the request with 406 if the `Accept` header is `application/ld+json`. Regression tests must send `Accept: application/zip` (or the matching MIME type) to reach the security gate.
 - **The skill `/migrate-contextual-roles <Entity>`** automates this migration for a single entity, including Vue-caller compatibility checks and lint/test runs.
+
+### Securing a per-user owned `#[ApiResource]` (Voter + Extension + Processor)
+
+For **CoreBundle** resources that are **not** course-scoped but are **owned by one user** (e.g. `PushSubscription`, personal tokens, per-user settings rows), do **not** try to express ownership with `security: "... and object.getUser() == user"`. That expression returns **403** (leaks the row's existence), silently blocks admins unless you also `or is_granted('ROLE_ADMIN')`, and duplicates the rule across operations. Each concern has its own idiomatic tool — **an API Platform Voter acts on a single item only**, so split the work three ways:
+
+| Concern                  | Operations                         | Tool                                                                                | Why                                                                                                         |
+|--------------------------|------------------------------------|-------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| Per-object authorization | `Get` / `Put` / `Patch` / `Delete` | **Voter** (`is_granted('VIEW'\|'EDIT'\|'DELETE', object)`)                          | Object exists; voter is reusable from non-API code too                                                      |
+| Collection scoping       | `GetCollection`                    | **`QueryCollectionExtensionInterface`** in `src/CoreBundle/DataProvider/Extension/` | A voter can't filter a collection; an extension adds a `WHERE` so foreign rows are never selected           |
+| Create / mass-assignment | `Post`                             | **Processor** forcing `$data->setUser($currentUser)`                                | On create no object exists yet, so no voter can run — forcing the owner is the only mass-assignment defense |
+
+**Voter** — standard Symfony voter on the entity, e.g. returns `$subscription->getUser() === $user || $security->isGranted('ROLE_ADMIN')`. Reference dedicated voters already in the repo: `CCalendarEventVoter`, `UsergroupVoter`, `SessionVoter`. Wire it on the item operations with `security: "is_granted('DELETE', object)"`.
+
+**Collection extension** — a `QueryCollectionExtensionInterface` in `src/CoreBundle/DataProvider/Extension/` that adds the ownership `WHERE` on the root alias, with an admin bypass. API Platform runs every registered collection extension (including the built-in Filter / Order / Pagination) automatically, so you only add your `WHERE` — no need to re-apply those extensions by hand. Canonical reference: `SessionRelUserExtension` (`src/CoreBundle/DataProvider/Extension/SessionRelUserExtension.php`):
+
+```php
+final class XExtension implements QueryCollectionExtensionInterface
+{
+    public function __construct(private readonly Security $security) {}
+
+    public function applyToCollection(QueryBuilder $qb, QueryNameGeneratorInterface $g, string $resourceClass, ?Operation $op = null, array $ctx = []): void
+    {
+        if (X::class !== $resourceClass || $this->security->isGranted('ROLE_ADMIN')) {
+            return;
+        }
+        $user = $this->security->getUser() ?? throw new AccessDeniedException();
+        $alias = $qb->getRootAliases()[0];
+        $qb->andWhere("$alias.user = :current_user")->setParameter('current_user', $user->getId());
+    }
+}
+```
+
+**Processor** — forces ownership on create (and can also re-validate on delete). Branch on `$operation instanceof DeleteOperationInterface`; inject the inner services with `#[Autowire(service: 'api_platform.doctrine.orm.state.persist_processor')]` / `...remove_processor`.
+
+**When to fall back to an all-in-one State Provider instead of a Voter+Extension:** only when the collection can't be a plain `WHERE` (custom/aggregated data source — see `StickyCourseStateProvider`), or when you must return **404 instead of the voter's 403** for foreign items (no existence disclosure). The merged `PushSubscription` fix used a single `PushSubscriptionStateProvider` + `PushSubscriptionStateProcessor` for the latter reason; for the typical case prefer the Voter + Extension + Processor split above.
+
+**Cross-cutting rules learned here:**
+- **Current user:** `UserHelper::getCurrent(): ?User` (inject `UserHelper`), never `$security->getUser()` — except inside a `QueryCollectionExtension`, where `$this->security->getUser()` is the established idiom (see `SessionRelUserExtension`).
+- **Role checks:** `$security->isGranted('ROLE_ADMIN')` (respects the hierarchy), never `$user->isAdmin()` / `hasRole()`.
+- **Serialization:** owner relation → **read-only** group (mass-assignment defense); secrets (tokens, keys) → **write-only** group so they are never echoed back.
+- **No `services.yaml` wiring needed:** classes implementing `VoterInterface` / `QueryCollectionExtensionInterface` / `ProcessorInterface` are auto-tagged via `autoconfigure`; inner API Platform services are pulled in with `#[Autowire(service: ...)]`.
+- **Regression test gotcha:** the test DB host in `.env.test` may not be reachable from the PHP container — override `DATABASE_HOST`/`DATABASE_PASSWORD` env vars on the `php bin/phpunit` call. To test admin access over a JWT Bearer token, create the admin with `createUser('name', '', '', 'ROLE_ADMIN')` (it registers the `UserAuthSource::PLATFORM` row that `UserAuthSourceListener` requires); the fixture `admin/admin` account may lack it in a fresh test DB.
