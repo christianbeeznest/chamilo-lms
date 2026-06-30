@@ -16,6 +16,7 @@ final readonly class UpdateConfiguration
     private const ENV_MINISIGN_PUBLIC_KEY = 'CHAMILO_UPDATE_MINISIGN_PUBLIC_KEY';
     private const ENV_DEBUG_SLOW_COPY_MS = 'CHAMILO_UPDATE_DEBUG_SLOW_COPY_MS';
     private const ENV_COMMAND_TIMEOUT = 'CHAMILO_UPDATE_COMMAND_TIMEOUT';
+    private const DEFAULT_MANIFEST_SOURCE = 'https://updates.chamilo.org/2.x/stable.json';
     private const LOCAL_TEST_MANIFEST_SOURCE = '/tmp/chamilo-update-slow-manifest.json';
     private const LOCAL_TEST_PACKAGE_PATH = '/tmp/chamilo-update-slow.zip';
 
@@ -26,7 +27,7 @@ final readonly class UpdateConfiguration
 
     public function getDefaultManifestSource(): ?string
     {
-        return $this->readStringEnv(self::ENV_MANIFEST_URL);
+        return $this->readStringEnv(self::ENV_MANIFEST_URL) ?? self::DEFAULT_MANIFEST_SOURCE;
     }
 
     public function getOfficialManifestSource(): ?string

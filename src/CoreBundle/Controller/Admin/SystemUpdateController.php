@@ -7,7 +7,9 @@ declare(strict_types=1);
 namespace Chamilo\CoreBundle\Controller\Admin;
 
 use Chamilo\CoreBundle\Service\Update\Dto\UpdateManifest;
+use Chamilo\CoreBundle\Service\Update\InstalledChamiloVersionProvider;
 use Chamilo\CoreBundle\Service\Update\UpdateApplyPlanner;
+use Chamilo\CoreBundle\Service\Update\UpdateAvailabilityChecker;
 use Chamilo\CoreBundle\Service\Update\UpdateConfiguration;
 use Chamilo\CoreBundle\Service\Update\UpdateFileApplier;
 use Chamilo\CoreBundle\Service\Update\UpdateManifestClient;
@@ -19,13 +21,13 @@ use Chamilo\CoreBundle\Service\Update\UpdatePostApplyChecker;
 use Chamilo\CoreBundle\Service\Update\UpdatePostApplyCommandRunner;
 use Chamilo\CoreBundle\Service\Update\UpdatePreflightChecker;
 use Chamilo\CoreBundle\Service\Update\UpdateStagingManager;
-use Composer\InstalledVersions;
 use InvalidArgumentException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Throwable;
 
@@ -42,10 +44,13 @@ final class SystemUpdateController extends AbstractController
         private readonly UpdateConfiguration $updateConfiguration,
         private readonly UpdateMigrationSafetyChecker $migrationSafetyChecker,
         private readonly UpdateApplyPlanner $applyPlanner,
+        private readonly UpdateAvailabilityChecker $availabilityChecker,
         private readonly UpdateFileApplier $fileApplier,
         private readonly UpdatePostApplyChecker $postApplyChecker,
         private readonly UpdatePostApplyCommandRunner $postApplyCommandRunner,
         private readonly UpdateOperationLogger $operationLogger,
+        private readonly InstalledChamiloVersionProvider $installedVersionProvider,
+        private readonly CsrfTokenManagerInterface $csrfTokenManager,
     ) {}
 
     #[Route('/status', name: 'status', methods: ['GET'])]
@@ -70,6 +75,7 @@ final class SystemUpdateController extends AbstractController
             'trustedPublicKeyFingerprint' => $this->updateConfiguration->getTrustedPublicKeyFingerprint(),
             'allowUiPostApplyCommands' => $this->updateConfiguration->allowsUiPostApplyCommands(),
             'commandTimeout' => $this->updateConfiguration->getCommandTimeoutSeconds(),
+            'csrfToken' => $this->csrfTokenManager->getToken('system_update')->getValue(),
         ]);
     }
 
@@ -78,13 +84,19 @@ final class SystemUpdateController extends AbstractController
     {
         $payload = $this->readJsonPayload($request);
 
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
         try {
             $manifestSource = $this->readManifestSource($payload);
             $manifest = $this->manifestClient->load($manifestSource);
+            $availability = $this->availabilityChecker->check($manifest);
 
             return $this->json([
                 'manifestSource' => $manifestSource,
                 'manifest' => $this->manifestToArray($manifest),
+                'availability' => $availability->toArray(),
             ]);
         } catch (Throwable $exception) {
             return $this->json([
@@ -97,6 +109,10 @@ final class SystemUpdateController extends AbstractController
     public function verify(Request $request): JsonResponse
     {
         $payload = $this->readJsonPayload($request);
+
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
 
         try {
             $manifestSource = $this->readManifestSource($payload);
@@ -143,6 +159,10 @@ final class SystemUpdateController extends AbstractController
     {
         $payload = $this->readJsonPayload($request);
 
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
         try {
             $manifestSource = $this->readManifestSource($payload);
             $packagePath = $this->normalizeNullableLocalPath($this->readNullableString($payload, 'packagePath'), 'package');
@@ -166,6 +186,10 @@ final class SystemUpdateController extends AbstractController
     public function stage(Request $request): JsonResponse
     {
         $payload = $this->readJsonPayload($request);
+
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
 
         try {
             $manifestSource = $this->readManifestSource($payload);
@@ -254,6 +278,10 @@ final class SystemUpdateController extends AbstractController
     {
         $payload = $this->readJsonPayload($request);
 
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
         try {
             $stagingPath = $this->readRequiredString($payload, 'stagingPath');
             $result = $this->applyPlanner->buildPlan($stagingPath);
@@ -288,6 +316,10 @@ final class SystemUpdateController extends AbstractController
     {
         $payload = $this->readJsonPayload($request);
 
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
         try {
             $stagingPath = $this->readRequiredString($payload, 'stagingPath');
             $confirmed = $this->readApplyFilesConfirmation($payload);
@@ -310,6 +342,10 @@ final class SystemUpdateController extends AbstractController
     {
         $payload = $this->readJsonPayload($request);
 
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
+
         try {
             $stagingPath = $this->readRequiredString($payload, 'stagingPath');
             $result = $this->postApplyChecker->check($stagingPath);
@@ -325,11 +361,14 @@ final class SystemUpdateController extends AbstractController
     }
 
 
-
     #[Route('/migration-safety', name: 'migration_safety', methods: ['POST'])]
     public function migrationSafety(Request $request): JsonResponse
     {
         $payload = $this->readJsonPayload($request);
+
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
 
         try {
             $stagingPath = $this->readRequiredString($payload, 'stagingPath');
@@ -349,6 +388,10 @@ final class SystemUpdateController extends AbstractController
     public function runPostApply(Request $request): JsonResponse
     {
         $payload = $this->readJsonPayload($request);
+
+        if (!$this->isValidCsrfPayload($request, $payload)) {
+            return $this->json(['error' => 'Invalid CSRF token.'], Response::HTTP_FORBIDDEN);
+        }
 
         try {
             if (!$this->updateConfiguration->allowsUiPostApplyCommands()) {
@@ -382,6 +425,20 @@ final class SystemUpdateController extends AbstractController
                 'error' => $exception->getMessage(),
             ], Response::HTTP_BAD_REQUEST);
         }
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function isValidCsrfPayload(Request $request, array $payload): bool
+    {
+        $token = (string) ($request->headers->get('X-CSRF-Token') ?? '');
+
+        if ('' === $token && isset($payload['csrfToken']) && \is_string($payload['csrfToken'])) {
+            $token = $payload['csrfToken'];
+        }
+
+        return $this->isCsrfTokenValid('system_update', $token);
     }
 
     /**
@@ -641,15 +698,6 @@ final class SystemUpdateController extends AbstractController
 
     private function getInstalledVersion(): string
     {
-        try {
-            $version = InstalledVersions::getPrettyVersion('chamilo/chamilo-lms');
-
-            if (\is_string($version) && '' !== trim($version)) {
-                return $version;
-            }
-        } catch (Throwable) {
-        }
-
-        return 'unknown';
+        return $this->installedVersionProvider->getInstalledVersion();
     }
 }

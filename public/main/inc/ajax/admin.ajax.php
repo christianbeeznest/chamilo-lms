@@ -332,7 +332,7 @@ function getLatestNews(): string
 }
 
 /**
- * Appends a local update notice link for development tests.
+ * Appends an official update notice simulation link for development tests.
  */
 function appendLocalSystemUpdateNotice(string $html): string
 {
@@ -343,7 +343,7 @@ function appendLocalSystemUpdateNotice(string $html): string
     }
 
     $updateUrl = api_get_path(WEB_PATH).'admin/system-update?'.http_build_query([
-        'source' => 'local-test',
+        'source' => 'official',
         'check' => '1',
     ]);
     $safeUpdateUrl = htmlspecialchars($updateUrl, ENT_QUOTES, 'UTF-8');
@@ -351,13 +351,13 @@ function appendLocalSystemUpdateNotice(string $html): string
     return $html.'
         <div style="margin-top: 1rem; padding: 0.75rem; border: 1px solid #2563eb; border-radius: 0.5rem; background: #eff6ff;">
             <div style="font-weight: 600; color: #1e3a8a; margin-bottom: 0.35rem;">
-                Test update available
+                '.get_lang('Update available').'
             </div>
             <div style="color: #1e40af; margin-bottom: 0.6rem;">
-                A local update package is available for testing the new update workflow.
+                '.get_lang('A Chamilo update package is available. Review the update before applying it.').'
             </div>
             <a href="'.$safeUpdateUrl.'" style="display: inline-block; padding: 0.45rem 0.8rem; border-radius: 0.35rem; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600;">
-                Review test update
+                '.get_lang('Review update').'
             </a>
         </div>
     ';
