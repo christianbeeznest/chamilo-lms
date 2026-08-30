@@ -259,11 +259,17 @@ final readonly class LearningPathScormRuntimePackageAction
             return '';
         }
 
-        $segments = explode('/', $normalized);
-        foreach ($segments as $segment) {
-            if ('' === $segment || '.' === $segment || '..' === $segment) {
+        $segments = [];
+        foreach (explode('/', $normalized) as $segment) {
+            if ('' === $segment || '..' === $segment) {
                 return '';
             }
+
+            if ('.' === $segment) {
+                continue;
+            }
+
+            $segments[] = $segment;
         }
 
         return implode('/', $segments);
