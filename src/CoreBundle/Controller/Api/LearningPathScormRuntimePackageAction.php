@@ -25,6 +25,7 @@ use Chamilo\CourseBundle\Repository\CLpItemRepository;
 use Chamilo\CourseBundle\Repository\CLpRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\FilesystemOperator;
+use PhpZip\ZipFile;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -34,6 +35,7 @@ use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Throwable;
 
 use const PATHINFO_EXTENSION;
 use const PHP_SESSION_ACTIVE;
@@ -104,20 +106,26 @@ final readonly class LearningPathScormRuntimePackageAction
             throw new AccessDeniedHttpException('The SCORM item is not available.');
         }
 
-        $source = $this->resolvePackageSource($learningPath, $course);
-        $fileSize = $source['filesystem']->fileSize($source['path']);
-        $stream = $source['filesystem']->readStream($source['path']);
-        if (!\is_resource($stream)) {
-            throw new NotFoundHttpException('The SCORM ZIP package could not be read.');
-        }
+        $source = $runtime->isCStudioContent
+            ? $this->createCStudioRuntimePackageSource($learningPath)
+            : $this->openOriginalPackageSource($learningPath, $course);
+        $stream = $source['stream'];
+        $fileSize = $source['size'];
+        $cleanupPath = $source['cleanupPath'];
 
         if (PHP_SESSION_ACTIVE === session_status()) {
             session_write_close();
         }
 
-        $response = new StreamedResponse(static function () use ($stream): void {
-            fpassthru($stream);
-            fclose($stream);
+        $response = new StreamedResponse(static function () use ($stream, $cleanupPath): void {
+            try {
+                fpassthru($stream);
+            } finally {
+                fclose($stream);
+                if (null !== $cleanupPath) {
+                    @unlink($cleanupPath);
+                }
+            }
         });
         $response->headers->set(
             'Content-Disposition',
@@ -137,6 +145,145 @@ final readonly class LearningPathScormRuntimePackageAction
         $response->headers->set('Cache-Control', 'private, no-store, max-age=0');
 
         return $response;
+    }
+
+    /**
+     * @return array{stream: resource, size: int, downloadName: string, cleanupPath: null}
+     */
+    private function openOriginalPackageSource(CLp $learningPath, Course $course): array
+    {
+        $source = $this->resolvePackageSource($learningPath, $course);
+        $stream = $source['filesystem']->readStream($source['path']);
+        if (!\is_resource($stream)) {
+            throw new NotFoundHttpException('The SCORM ZIP package could not be read.');
+        }
+
+        return [
+            'stream' => $stream,
+            'size' => $source['filesystem']->fileSize($source['path']),
+            'downloadName' => $source['downloadName'],
+            'cleanupPath' => null,
+        ];
+    }
+
+    /**
+     * CStudio imports an initial SCORM ZIP and then renders the editable project
+     * into the extracted asset folder. The original ZIP therefore does not
+     * necessarily contain the latest rendered project. Runtime playback must
+     * package the extracted folder instead of returning that stale source ZIP.
+     *
+     * @return array{stream: resource, size: int, downloadName: string, cleanupPath: string}
+     */
+    private function createCStudioRuntimePackageSource(CLp $learningPath): array
+    {
+        $asset = $learningPath->getAsset();
+        if (!$asset instanceof Asset) {
+            throw new NotFoundHttpException('The CStudio runtime package asset is missing.');
+        }
+
+        $filesystem = $this->assetRepository->getFileSystem();
+        $assetFolder = trim((string) $this->assetRepository->getFolder($asset), '/');
+        $learningPathFolder = $this->normalizePackageFolder((string) $learningPath->getPath());
+        if ('' === $assetFolder || '' === $learningPathFolder) {
+            throw new NotFoundHttpException('The CStudio runtime package folder could not be resolved.');
+        }
+
+        $folder = $assetFolder.'/'.$learningPathFolder;
+        if (!$filesystem->directoryExists($folder)) {
+            throw new NotFoundHttpException('The CStudio runtime package folder could not be found.');
+        }
+
+        $temporaryZip = rtrim(sys_get_temp_dir(), '/').'/cstudio-runtime-'.bin2hex(random_bytes(16)).'.zip';
+        $zip = new ZipFile();
+        $fileCount = 0;
+
+        try {
+            $folderPrefix = $folder.'/';
+            foreach ($filesystem->listContents($folder, true) as $entry) {
+                if (!$entry->isFile()) {
+                    continue;
+                }
+
+                $entryPath = trim(str_replace('\\', '/', $entry->path()), '/');
+                if (!str_starts_with($entryPath, $folderPrefix)) {
+                    continue;
+                }
+
+                $relativePath = substr($entryPath, \strlen($folderPrefix));
+                $relativePath = $this->normalizePackageFilePath($relativePath);
+                if ('' === $relativePath) {
+                    continue;
+                }
+
+                $zip->addFromString($relativePath, $filesystem->read($entry->path()));
+                ++$fileCount;
+            }
+
+            if (0 === $fileCount) {
+                throw new NotFoundHttpException('The CStudio runtime package is empty.');
+            }
+
+            $zip->saveAsFile($temporaryZip);
+        } catch (Throwable $exception) {
+            @unlink($temporaryZip);
+
+            if ($exception instanceof NotFoundHttpException) {
+                throw $exception;
+            }
+
+            throw new NotFoundHttpException('The CStudio runtime package could not be created.', $exception);
+        } finally {
+            $zip->close();
+        }
+
+        $fileSize = @filesize($temporaryZip);
+        $stream = @fopen($temporaryZip, 'rb');
+        if (false === $fileSize || !\is_resource($stream)) {
+            @unlink($temporaryZip);
+
+            throw new NotFoundHttpException('The CStudio runtime package could not be read.');
+        }
+
+        return [
+            'stream' => $stream,
+            'size' => (int) $fileSize,
+            'downloadName' => $this->downloadName($learningPath, $asset, null),
+            'cleanupPath' => $temporaryZip,
+        ];
+    }
+
+    private function normalizePackageFolder(string $path): string
+    {
+        $normalized = trim(str_replace('\\', '/', $path), '/');
+        if ('' === $normalized) {
+            return '';
+        }
+
+        $segments = explode('/', $normalized);
+        foreach ($segments as $segment) {
+            if ('' === $segment || '.' === $segment || '..' === $segment) {
+                return '';
+            }
+        }
+
+        return implode('/', $segments);
+    }
+
+    private function normalizePackageFilePath(string $path): string
+    {
+        $normalized = trim(str_replace('\\', '/', $path), '/');
+        if ('' === $normalized) {
+            return '';
+        }
+
+        $segments = explode('/', $normalized);
+        foreach ($segments as $segment) {
+            if ('' === $segment || '.' === $segment || '..' === $segment) {
+                return '';
+            }
+        }
+
+        return implode('/', $segments);
     }
 
     /**
