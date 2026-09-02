@@ -185,6 +185,7 @@ final readonly class LearningPathRuntimeProvider implements ProviderInterface
 
             $rows[] = [
                 'id' => $itemId,
+                'ref' => trim((string) $item->getRef()),
                 'title' => $this->plainTitle($item->getTitle()),
                 'itemType' => $itemType,
                 'parentId' => $parentId,
